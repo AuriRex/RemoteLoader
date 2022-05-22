@@ -12,7 +12,6 @@ namespace RemoteLoader
     {
         private RemoteLoaderConfig _config;
 
-        private static JsonSerializerSettings _jsonSerializerSettings = null;
         public static JsonSerializerSettings JsonSerializerSettings { get; } = new JsonSerializerSettings()
         {
             Formatting = Formatting.Indented,
