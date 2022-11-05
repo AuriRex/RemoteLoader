@@ -2,10 +2,12 @@
 using Newtonsoft.Json;
 using RemoteLoader;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 [assembly: MelonColor(ConsoleColor.DarkMagenta)]
-[assembly: MelonInfo(typeof(RemoteLoaderPlugin), "RemoteLoader", "1.0.0", "AuriRex")]
+[assembly: MelonInfo(typeof(RemoteLoaderPlugin), "RemoteLoader", "1.1.0", "AuriRex")]
 namespace RemoteLoader
 {
     public class RemoteLoaderPlugin : MelonPlugin
@@ -17,33 +19,53 @@ namespace RemoteLoader
             Formatting = Formatting.Indented,
         };
 
-        private const string kConfigFileName = "RemoteLoaderConfig.json";
-        private int coolCountThatMakesConsoleColorGoAlternate = 0;
+        private const string CONFIG_FILE_NAME = "RemoteLoaderConfig.json";
+        private int _attemptedLoadedModsCount = 0;
 
         public override void OnApplicationEarlyStart()
         {
-            var configPath = Path.Combine(MelonUtils.UserDataDirectory, kConfigFileName);
+            var configPath = Path.Combine(MelonUtils.UserDataDirectory, CONFIG_FILE_NAME);
 
             LoadConfig(configPath);
 
             if((_config.PathsToModsToLoad?.Count ?? 0) == 0)
             {
-                LoggerInstance.Warning($"No Mod paths set in {nameof(RemoteLoader)}s config file \"{kConfigFileName}\", this plugin won't do anything!");
+                LoggerInstance.Warning($"No Mod paths set in {nameof(RemoteLoader)}s config file \"{CONFIG_FILE_NAME}\", this plugin won't do anything!");
                 return;
             }
 
-            foreach(var path in _config.PathsToModsToLoad)
+            var assemblies = new List<MelonAssembly>();
+            foreach (var path in _config.PathsToModsToLoad)
             {
-                ProcessModPath(path);
+                ProcessModPath(path, assemblies);
             }
+
+            var melons = new List<MelonMod>();
+            foreach(var asm in assemblies)
+            {
+                asm.LoadMelons();
+                foreach(var item in asm.LoadedMelons)
+                {
+                    if(item is MelonMod mod)
+                    {
+                        melons.Add(mod);
+                    }
+                }
+            }
+
+            var count = melons.Count();
+            MelonBase.RegisterSorted(melons);
+
+            LoggerInstance.Msg($"Loaded {count}/{_attemptedLoadedModsCount} {"Mod".MakePlural(count)}.");
         }
 
-        private void ProcessModPath(string path)
+        private void ProcessModPath(string path, List<MelonAssembly> assemblies)
         {
             if(string.IsNullOrWhiteSpace(path))
-            {
                 return;
-            }
+
+            if (!File.Exists(path) && !Directory.Exists(path))
+                return;
 
             FileAttributes attr = File.GetAttributes(path);
 
@@ -51,32 +73,34 @@ namespace RemoteLoader
             {
                 foreach(var file in Directory.EnumerateFiles(path))
                 {
-                    LoadModFromPath(file);
+                    var asm = LoadModFromPath(file);
+                    if (asm != null)
+                        assemblies.Add(asm);
                 }
             }
             else
             {
-                LoadModFromPath(path);
+                var asm = LoadModFromPath(path);
+                if (asm != null)
+                    assemblies.Add(asm);
             }
         }
 
-        private void LoadModFromPath(string path)
+        private MelonAssembly LoadModFromPath(string path)
         {
             if (File.Exists(path))
             {
                 if (Path.GetExtension(path)?.ToLower() != ".dll")
                 {
-                    return;
+                    return null;
                 }
 
                 try
                 {
-                    var symbolsPath = Path.ChangeExtension(path, ".pdb");
-                    if (!File.Exists(symbolsPath))
-                        symbolsPath = null;
-                    LoggerInstance.Msg(coolCountThatMakesConsoleColorGoAlternate % 2 == 0 ? ConsoleColor.DarkMagenta : ConsoleColor.Magenta, $"Loading Mod from path \"{path}\" ...");
-                    coolCountThatMakesConsoleColorGoAlternate++;
-                    MelonHandler.LoadFromFile(path, symbolsPath);
+                    LoggerInstance.Msg(_attemptedLoadedModsCount % 2 == 0 ? ConsoleColor.DarkMagenta : ConsoleColor.Magenta, $"Loading Mod from path \"{path}\" ...");
+                    _attemptedLoadedModsCount++;
+
+                    return MelonLoader.MelonAssembly.LoadMelonAssembly(path, loadMelons: false);
                 }
                 catch (Exception ex)
                 {
@@ -88,6 +112,8 @@ namespace RemoteLoader
             {
                 LoggerInstance.Warning($"No Mod exists at path \"{path}\"!");
             }
+
+            return null;
         }
 
         private void LoadConfig(string path)
