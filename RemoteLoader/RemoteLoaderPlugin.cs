@@ -22,7 +22,7 @@ namespace RemoteLoader
         private const string CONFIG_FILE_NAME = "RemoteLoaderConfig.json";
         private int _attemptedLoadedModsCount = 0;
 
-        public override void OnApplicationEarlyStart()
+        public override void OnPreModsLoaded()
         {
             var configPath = Path.Combine(MelonUtils.UserDataDirectory, CONFIG_FILE_NAME);
 
